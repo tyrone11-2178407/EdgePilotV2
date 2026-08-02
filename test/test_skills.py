@@ -3,8 +3,8 @@ from unittest.mock import patch
 import pytest
 
 from core.skills import list_project_skills, load_project_skill
-from MCP.tool_executor import ToolExecutor
-from MCP.tool_schemas import get_tool_schema
+from core.tool_executor import ToolExecutor
+from core.tool_schemas import get_tool_schema
 
 
 def test_kubernetes_skill_is_discoverable():
@@ -58,7 +58,7 @@ def test_skill_tool_schemas_are_registered():
     assert get_tool_schema("load_skill") is not None
 
 
-@patch("MCP.tool_executor.list_skills")
+@patch("core.tool_executor.list_skills")
 def test_executor_lists_skills(mock_list):
     mock_list.return_value = {
         "skills": [
@@ -77,7 +77,7 @@ def test_executor_lists_skills(mock_list):
     mock_list.assert_called_once_with()
 
 
-@patch("MCP.tool_executor.load_skill")
+@patch("core.tool_executor.load_skill")
 def test_executor_loads_skill(mock_load):
     mock_load.return_value = {
         "name": "kubernetes-control",

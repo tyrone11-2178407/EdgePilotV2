@@ -8,7 +8,7 @@ import platform
 import time
 from typing import Any, Dict, List, Optional
 
-from MCP import execute_tool
+from core.tool_executor import execute_tool
 from core.settings import DEFAULT_PROVIDER, SYSTEM_PROMPT, provider_config
 from providers import get_provider
 from providers.base import ChatMessage

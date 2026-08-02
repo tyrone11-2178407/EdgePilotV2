@@ -3,7 +3,7 @@ from typing import Any, Dict
 from kubernetes import client
 from kubernetes.client.exceptions import ApiException
 
-from .providers import (
+from .kubernetes_capacity import (
     KubernetesMetricsProvider,
     evaluate_kubernetes_capacity,
 )

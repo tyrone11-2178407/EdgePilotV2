@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from MCP.tool_schemas import format_tools_for_claude
+from core.tool_schemas import format_tools_for_claude
 from providers.base import ProviderConfig
 from providers.claude import ClaudeProvider
 

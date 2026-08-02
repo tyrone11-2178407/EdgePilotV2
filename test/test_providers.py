@@ -5,7 +5,7 @@ from kubernetes.config.config_exception import ConfigException
 import pytest
 from kubernetes.client.exceptions import ApiException
 
-from tools.providers import (
+from tools.kubernetes_capacity import (
     KubernetesMetricsProvider,
     _pod_resource_totals,
     evaluate_kubernetes_capacity,
@@ -13,9 +13,9 @@ from tools.providers import (
 
 
 
-@patch("tools.providers.client.CoreV1Api")
-@patch("tools.providers.config.load_kube_config")
-@patch("tools.providers.config.load_incluster_config")
+@patch("tools.kubernetes_capacity.client.CoreV1Api")
+@patch("tools.kubernetes_capacity.config.load_kube_config")
+@patch("tools.kubernetes_capacity.config.load_incluster_config")
 def test_kubernetes_provider_prefers_incluster_config(
     mock_incluster,
     mock_kubeconfig,
@@ -28,9 +28,9 @@ def test_kubernetes_provider_prefers_incluster_config(
     mock_core_api.assert_called_once_with()
 
 
-@patch("tools.providers.client.CoreV1Api")
-@patch("tools.providers.config.load_kube_config")
-@patch("tools.providers.config.load_incluster_config")
+@patch("tools.kubernetes_capacity.client.CoreV1Api")
+@patch("tools.kubernetes_capacity.config.load_kube_config")
+@patch("tools.kubernetes_capacity.config.load_incluster_config")
 def test_kubernetes_provider_falls_back_to_local_kubeconfig(
     mock_incluster,
     mock_kubeconfig,
@@ -45,9 +45,9 @@ def test_kubernetes_provider_falls_back_to_local_kubeconfig(
     mock_core_api.assert_called_once_with()
 
 
-@patch("tools.providers.client.CoreV1Api")
-@patch("tools.providers.config.load_kube_config")
-@patch("tools.providers.config.load_incluster_config")
+@patch("tools.kubernetes_capacity.client.CoreV1Api")
+@patch("tools.kubernetes_capacity.config.load_kube_config")
+@patch("tools.kubernetes_capacity.config.load_incluster_config")
 def test_explicit_kubeconfig_skips_incluster_config(
     mock_incluster,
     mock_kubeconfig,
@@ -534,9 +534,9 @@ def test_prefer_no_schedule_does_not_block_capacity():
 
     assert result["results"][0]["can_run_now"] is True
 
-@patch("tools.providers.client.CoreV1Api")
-@patch("tools.providers.config.load_kube_config")
-@patch("tools.providers.config.load_incluster_config")
+@patch("tools.kubernetes_capacity.client.CoreV1Api")
+@patch("tools.kubernetes_capacity.config.load_kube_config")
+@patch("tools.kubernetes_capacity.config.load_incluster_config")
 def test_kubernetes_provider_raises_when_all_config_loading_fails(
     mock_incluster,
     mock_kubeconfig,

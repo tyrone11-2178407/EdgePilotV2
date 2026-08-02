@@ -10,3 +10,4 @@ pyinstaller>=6.11.0
 sentence-transformers>=3.0.0
 numpy>=1.24.0
 kubernetes>=36.0.0
+PyYAML>=6.0.0

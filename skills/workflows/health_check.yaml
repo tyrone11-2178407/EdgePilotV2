@@ -1,0 +1,21 @@
+description: "Comprehensive daily maintenance health check across cluster nodes and pods."
+steps:
+  - name: "node_health"
+    instruction: "Check all nodes in the cluster for 'Ready' status, resource pressure (memory/disk), and any active taints."
+    tools: ["inspect_kubernetes_cluster"]
+    
+  - name: "memory_audit"
+    instruction: "Query Prometheus for any pod that has sustained greater than 80% of its memory limit over the last 24 hours."
+    tools: ["query_prometheus"]
+    
+  - name: "cpu_audit"
+    instruction: "Query Prometheus for any pod that has sustained greater than 90% CPU usage over the last 24 hours."
+    tools: ["query_prometheus"]
+    
+  - name: "failed_pods"
+    instruction: "Check the cluster for any pods stuck in 'CrashLoopBackOff', 'ImagePullBackOff', or 'Error' states."
+    tools: ["inspect_kubernetes_cluster"]
+    
+  - name: "summary_report"
+    instruction: "Aggregate all the findings from the previous steps into a structured daily health report. Highlight any critical risk levels and recommend specific remediation actions."
+    tools: []

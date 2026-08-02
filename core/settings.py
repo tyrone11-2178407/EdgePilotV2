@@ -19,7 +19,8 @@ SYSTEM_PROMPT = (
     "- When users ask 'can I run X' or 'is it safe to start Y' → call gather_metrics() to check current load, then provide guidance based on typical requirements\n"
     "- When users want to open/launch an app → call launch() with the app name\n"
     "- When users ask what apps are installed or available → call list_apps() or search()\n"
-    "- When users want to close/end a process → call end_task()\n\n"
+    "- When users want to close/end a process → call end_task()\n"
+    "- When users ask for a health check, maintenance audit, or complex diagnosis → call run_workflow() with the appropriate workflow name\n\n"
 
     "DECISION MAKING:\n"
     "- Make reasonable assumptions based on general knowledge (e.g., heavy builds need ~50%+ CPU, video editing needs 8GB+ RAM)\n"

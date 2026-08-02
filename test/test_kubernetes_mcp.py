@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
-from MCP.tool_executor import ToolExecutor
-from MCP.tool_schemas import get_tool_schema
+from core.tool_executor import ToolExecutor
+from core.tool_schemas import get_tool_schema
 
 
 def test_read_only_kubernetes_schemas_are_registered():
@@ -17,7 +17,7 @@ def test_read_only_kubernetes_schemas_are_registered():
         assert schema["name"] == name
 
 
-@patch("MCP.tool_executor.inspect_kubernetes_cluster")
+@patch("core.tool_executor.inspect_kubernetes_cluster")
 def test_executor_inspects_cluster(mock_inspect):
     mock_inspect.return_value = {
         "source": "kubernetes",
@@ -34,7 +34,7 @@ def test_executor_inspects_cluster(mock_inspect):
     mock_inspect.assert_called_once_with()
 
 
-@patch("MCP.tool_executor.evaluate_kubernetes_workload")
+@patch("core.tool_executor.evaluate_kubernetes_workload")
 def test_executor_evaluates_workload(mock_evaluate):
     mock_evaluate.return_value = {
         "can_run_now": True,
@@ -73,7 +73,7 @@ def test_executor_rejects_missing_requirements():
     assert "requirements must be an object" in result["error"]
 
 
-@patch("MCP.tool_executor.inspect_kubernetes_deployment")
+@patch("core.tool_executor.inspect_kubernetes_deployment")
 def test_executor_inspects_deployment(mock_inspect):
     mock_inspect.return_value = {
         "namespace": "production",

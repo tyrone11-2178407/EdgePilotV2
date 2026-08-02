@@ -645,6 +645,67 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             },
             "required": ["name"],
         },
+    },
+    {
+        "name": "query_prometheus",
+        "description": "Query Prometheus for historical metric data over a time range using PromQL.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The PromQL expression.",
+                },
+                "time_range": {
+                    "type": "string",
+                    "description": "The time range to query (e.g. '1h', '1d'). Default is '1h'.",
+                    "default": "1h",
+                },
+                "step": {
+                    "type": "string",
+                    "description": "Resolution step (e.g. '1m'). Default is '1m'.",
+                    "default": "1m",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "query_pod_resources",
+        "description": "Get historical CPU and memory usage for a specific pod, compared against its resource limits.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "namespace": {
+                    "type": "string",
+                    "description": "The Kubernetes namespace.",
+                },
+                "pod_name": {
+                    "type": "string",
+                    "description": "The name of the pod.",
+                },
+                "window": {
+                    "type": "string",
+                    "description": "The time window to look back (e.g. '1h').",
+                    "default": "1h",
+                },
+            },
+            "required": ["namespace", "pod_name"],
+        },
+    },
+    {
+        "name": "run_workflow",
+        "description": "Trigger an autonomous, multi-step AI workflow to perform diagnostics or maintenance.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "workflow_name": {
+                    "type": "string",
+                    "description": "The exact name of the workflow to run (e.g. 'health_check', 'memory_anomaly')."
+                }
+            },
+            "required": ["workflow_name"]
+        }
     }
 ]
 

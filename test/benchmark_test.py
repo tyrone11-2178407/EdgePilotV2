@@ -1,6 +1,6 @@
 import time
 import asyncio
-from MCP.tool_executor import ToolExecutor
+from core.tool_executor import ToolExecutor
 from core.semantic_cache import SemanticCache
 
 def test_cache():

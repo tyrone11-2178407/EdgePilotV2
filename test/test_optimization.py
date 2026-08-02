@@ -69,7 +69,7 @@ class TestAsyncToolExecution:
 
     def test_execute_async_returns_result(self) -> None:
         """execute_async should produce the same result as synchronous execute."""
-        from MCP.tool_executor import ToolExecutor
+        from core.tool_executor import ToolExecutor
 
         executor = ToolExecutor()
         sync_result = executor.execute("gather_metrics", {"top_n": 2})
@@ -83,7 +83,7 @@ class TestAsyncToolExecution:
 
     def test_execute_batch_runs_concurrently(self) -> None:
         """execute_batch should run multiple calls and return results in order."""
-        from MCP.tool_executor import ToolExecutor
+        from core.tool_executor import ToolExecutor
 
         executor = ToolExecutor()
 
@@ -102,7 +102,7 @@ class TestAsyncToolExecution:
 
     def test_execute_batch_unknown_tool(self) -> None:
         """Batch should gracefully handle unknown tool names."""
-        from MCP.tool_executor import ToolExecutor
+        from core.tool_executor import ToolExecutor
 
         executor = ToolExecutor()
 

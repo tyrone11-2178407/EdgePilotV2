@@ -8,7 +8,7 @@ Provides four primary helpers:
 """
 
 from __future__ import annotations
-from .providers import LocalMetricsProvider, MetricsProvider
+from .kubernetes_capacity import LocalMetricsProvider, MetricsProvider
 
 import json
 import math

@@ -6,7 +6,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.semantic_cache import SemanticCache
-from MCP.tool_executor import ToolExecutor
+from core.tool_executor import ToolExecutor
 
 def measure_cache():
     cache = SemanticCache()

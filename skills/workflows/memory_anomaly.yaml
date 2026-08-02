@@ -1,0 +1,22 @@
+description: "Autonomous detection, diagnosis, and remediation of Kubernetes memory anomalies."
+steps:
+  - name: "inspect_cluster"
+    instruction: "Inspect the Kubernetes cluster state to list all nodes, pods, and their resource requests/limits."
+    tools: ["inspect_kubernetes_cluster"]
+    
+  - name: "detect_anomalies"
+    instruction: "Query Prometheus for the actual memory usage of the pods over the last 1 hour. Identify any pod where the actual memory usage heavily exceeds its requested limit (e.g. consuming far more memory than it asked for)."
+    tools: ["query_prometheus", "query_pod_resources"]
+    
+  - name: "diagnose"
+    instruction: "Based on the findings, identify the specific offending pod and explain why its behavior is an anomaly compared to its baseline resources."
+    tools: []
+    
+  - name: "recommend_and_remediate"
+    instruction: "Execute a restart on the offending pod to clear the memory leak. Stop and wait for user approval."
+    tools: ["restart_workload"]
+    requires_approval: true
+    
+  - name: "verify"
+    instruction: "Re-query the pod's resource usage to confirm it has restarted and memory usage has dropped back to baseline levels."
+    tools: ["query_pod_resources", "inspect_kubernetes_deployment"]

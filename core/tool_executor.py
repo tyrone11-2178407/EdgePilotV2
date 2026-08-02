@@ -31,6 +31,7 @@ from tools.kubernetes import (
     inspect_kubernetes_deployment,
 )
 from tools.skills import list_skills, load_skill
+from tools.prometheus import query_prometheus, query_pod_resources
 from tools import (
     preview_free_disk_space,
     execute_free_disk_space,
@@ -93,6 +94,8 @@ class ToolExecutor:
             "cordon_node": self._execute_cordon_node,
             "list_skills": self._execute_list_skills,
             "load_skill": self._execute_load_skill,
+            "query_prometheus": self._execute_query_prometheus,
+            "query_pod_resources": self._execute_query_pod_resources,
         }
 
     def execute(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -468,6 +471,33 @@ class ToolExecutor:
             raise ValueError("name is required")
 
         return load_skill(name)
+
+    def _execute_query_prometheus(
+            self,
+            args: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        query = args.get("query")
+        if not query:
+            raise ValueError("query is required")
+        return query_prometheus(
+            query=query,
+            time_range=args.get("time_range", "1h"),
+            step=args.get("step", "1m")
+        )
+
+    def _execute_query_pod_resources(
+            self,
+            args: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        namespace = args.get("namespace")
+        pod_name = args.get("pod_name")
+        if not namespace or not pod_name:
+            raise ValueError("namespace and pod_name are required")
+        return query_pod_resources(
+            namespace=namespace,
+            pod_name=pod_name,
+            window=args.get("window", "1h")
+        )
 
 
 

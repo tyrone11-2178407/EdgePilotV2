@@ -27,13 +27,15 @@ from providers import available_providers, get_provider
 from providers.base import ChatMessage, ProviderConfig
 from tools.metrics import gather_metrics
 from tools.scheduler import _REGISTRY
-from MCP import (
+from core.tool_executor import (
     execute_tool,
     execute_tool_async,
-    execute_tools_batch,
+    execute_tools_batch
+)
+from core.tool_schemas import (
     format_tools_for_gemini,
     format_tools_for_claude,
-    get_all_tool_schemas,
+    get_all_tool_schemas
 )
 from core.interface import ask_question, schedule_operation
 from core.semantic_cache import SemanticCache
@@ -479,6 +481,11 @@ def api_delete_chat(chat_id: str) -> Dict[str, str]:
     raise HTTPException(status_code=404, detail="Chat not found")
 
 
+@app.get("/api/workflows")
+def api_list_workflows():
+    from core.workflows import list_workflows
+    return list_workflows()
+
 # ====================================================================== #
 # SSE Streaming Endpoint                                                  #
 # ====================================================================== #
@@ -635,6 +642,48 @@ async def _sse_message_generator(
             tool_names = [tc.name for tc in llm_response.tool_calls]
             all_tool_names.extend(tool_names)
             total_tool_calls += len(tool_names)
+
+            if "run_workflow" in tool_names:
+                tc = next(t for t in llm_response.tool_calls if t.name == "run_workflow")
+                workflow_name = tc.arguments.get("workflow_name")
+                if workflow_name:
+                    from core.workflows import run_workflow
+                    
+                    async def _wait_for_approval(approval_id):
+                        future = asyncio.get_running_loop().create_future()
+                        PENDING_APPROVALS[approval_id] = future
+                        try:
+                            return await asyncio.wait_for(future, timeout=300.0)
+                        except asyncio.TimeoutError:
+                            return False
+                        finally:
+                            PENDING_APPROVALS.pop(approval_id, None)
+
+                    workflow_final_text = ""
+                    async for event in run_workflow(
+                        workflow_name, provider, tool_schemas, 
+                        execute_tools_batch, _wait_for_approval, chat_id
+                    ):
+                        if event["type"] == "chunk":
+                            workflow_final_text += event.get("data", {}).get("text", "")
+                            yield _event(event["type"], event.get("data", {}))
+                        elif event["type"] == "message":
+                            yield _event("message", {"text": workflow_final_text})
+                        else:
+                            yield _event(event["type"], event.get("data", {}))
+                    
+                    messages_to_save.append({
+                        "role": "assistant",
+                        "content": workflow_final_text.strip(),
+                        "created_at": time.time(),
+                    })
+                    chat_store.append_messages(
+                        chat_id,
+                        messages_to_save,
+                        total_prompt_tokens + total_response_tokens,
+                        tool_calls_delta=total_tool_calls,
+                    )
+                    return
 
             yield _event("status", {
                 "text": f"Executing tools: {', '.join(tool_names)}",
@@ -799,7 +848,50 @@ async def api_send_message_stream(
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "Connection": "keep-alive",
+        },
+    )
+
+@app.post("/api/workflows/{workflow_name}/run")
+async def api_run_workflow(workflow_name: str, payload: dict):
+    chat_id = payload.get("chat_id")
+    if not chat_id:
+        chat_id = chat_store.create_session(f"Workflow: {workflow_name}")["id"]
+        
+    provider_name = (payload.get("provider") or DEFAULT_PROVIDER).lower()
+    
+    async def _generator():
+        def _event(event_type: str, data: Any) -> str:
+            _payload = json.dumps(data) if not isinstance(data, str) else data
+            return f"event: {event_type}\ndata: {_payload}\n\n"
+            
+        from core.workflows import run_workflow
+        config = provider_config(provider_name)
+        provider = get_provider(provider_name, config)
+        tool_schemas = get_all_tool_schemas()
+        
+        async def _wait_for_approval(approval_id):
+            future = asyncio.get_running_loop().create_future()
+            PENDING_APPROVALS[approval_id] = future
+            try:
+                return await asyncio.wait_for(future, timeout=300.0)
+            except asyncio.TimeoutError:
+                return False
+            finally:
+                PENDING_APPROVALS.pop(approval_id, None)
+                
+        async for event in run_workflow(
+            workflow_name, provider, tool_schemas, 
+            execute_tools_batch, _wait_for_approval, chat_id
+        ):
+            yield _event(event["type"], event.get("data", {}))
+
+    return StreamingResponse(
+        _generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
         },
     )
 

@@ -322,10 +322,10 @@ EdgePilot/
 │   ├── providers.py         # Kubernetes + local metrics provider abstraction
 │   ├── scheduler.py         # Task registry + app launcher + shell/python runner
 │   └── end_task.py          # Process termination
-├── MCP/                     # Model Context Protocol integration
-│   ├── tool_schemas.py      # Function calling schemas for all tools
-│   ├── tool_executor.py     # Sync + async tool execution engine
-│   └── README.md            # Full MCP documentation
+├── core/                     # Model Context Protocol integration
+│   ├── tool_schemas.py
+│   └── workflows.py         # Autonomous workflows
+│   ├── tool_executor.py
 ├── ui/                      # Electron desktop application
 │   ├── index.html           # UI markup
 │   ├── renderer.js          # Frontend logic
@@ -448,11 +448,11 @@ User: "What games do I have?"
 ```
 
 ### Adding Your Own Tools
-See `MCP/README.md` for the complete guide. It's a simple 5-step process:
+See `docs/scenario_docs.md` for the complete guide. It's a simple 5-step process:
 1. Create tool function in `tools/`
 2. Export it in `tools/__init__.py`
-3. Add schema to `MCP/tool_schemas.py`
-4. Add executor in `MCP/tool_executor.py`
+3. Add schema to `core/tool_schemas.py`
+4. Add executor in `core/tool_executor.py`
 5. Restart and test!
 
 ## Testing & Utilities
@@ -524,5 +524,20 @@ EdgePilot includes several performance optimizations to minimize latency:
 
 ## Documentation
 - **`README.md`** (this file) - Quick start and overview
-- **`MCP/README.md`** - Complete MCP integration guide
-- **`tools/launcher.py`** - Application launcher implementation with detailed documentation
+- **`docs/scenario_docs.md`** - Testing scenarios and guides
+
+## Autonomous AI Workflows
+
+EdgePilotV2 now supports robust, multi-step autonomous AI workflows designed to execute complex, procedural tasks such as infrastructure health checks and security audits. 
+
+Workflows are defined cleanly in YAML files inside the `skills/workflows/` directory. Each workflow consists of discrete sequential steps, where the LLM is explicitly provided with the contextual instructions and allowed tools for that specific step. 
+
+### Built-in Workflows:
+1. **Infrastructure Health Check** (`health_check.yaml`) - Evaluates node capacity, polls Prometheus for CPU/Memory spikes, and checks for failing pods.
+2. **Memory Anomaly Remediation** (`memory_anomaly.yaml`) - Autonomously detects memory leaks via Prometheus, identifies the rogue pod, and asks for approval to restart it.
+3. **Security Audit** (`security_audit.yaml`) - Cross-references Kubernetes pod declarations with actual listening network ports (via `ss -tuln`) to detect undocumented open ports, and flags discrepancies.
+
+### Workflow Features:
+- **State Accumulation:** The conversational context and tool results are preserved sequentially across steps.
+- **Forced Summarization:** Tools are automatically disabled between steps so the LLM is forced to generate a clear, human-readable summary of the prior step's findings.
+- **Human-in-the-Loop:** Workflows can mark specific steps with `requires_approval: true`, prompting you to explicitly approve or deny execution (like cordoning nodes) in the UI before proceeding.

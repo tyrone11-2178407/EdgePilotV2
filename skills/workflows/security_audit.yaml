@@ -1,0 +1,18 @@
+description: "Security audit to detect unexpected open network ports inside running containers."
+steps:
+  - name: "scan_declarations"
+    instruction: "List all pods in the cluster and extract their officially declared container port specifications from the Kubernetes API."
+    tools: ["inspect_kubernetes_cluster"]
+    
+  - name: "scan_actual_ports"
+    instruction: "Run 'netstat -tuln' or 'ss -tuln' inside the running containers using run_shell_commands (e.g., via 'kubectl exec <pod> -- ss -tuln') to find the actual listening ports."
+    tools: ["run_shell_commands"]
+    
+  - name: "flag_discrepancies"
+    instruction: "Compare the declared ports from step 1 against the actual listening ports from step 2. Identify any pod that has opened a port not explicitly defined in its spec."
+    tools: []
+    
+  - name: "report_and_remediate"
+    instruction: "Generate a security risk report for any offending pods. Then, attempt to cordon the node running the suspicious pod to prevent scheduling, or restart the pod. Wait for user approval before executing."
+    tools: ["cordon_node", "restart_workload"]
+    requires_approval: true
