@@ -1,16 +1,94 @@
 import os
 import requests
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Sequence
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
 # Assumes user runs `kubectl port-forward svc/prometheus-kube-prometheus-prometheus 9090:9090 -n monitoring`
-PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
+#
+# PROM_URL is checked first because scripts/bootstrap_prometheus.sh writes
+# that name into env/.env, and tools/metrics.py's PrometheusClient already
+# reads it. PROMETHEUS_URL is kept as a fallback so existing setups using
+# it keep working.
+PROMETHEUS_URL = (
+    os.getenv("PROM_URL")
+    or os.getenv("PROMETHEUS_URL")
+    or "http://localhost:9090"
+)
 USE_MOCK = os.getenv("PROMETHEUS_MOCK", "false").lower() == "true"
 
-def query_prometheus(query: str, time_range: str = "1h", step: str = "1m") -> Dict[str, Any]:
+# A workflow step feeds these results straight into the model's context, so
+# an unbounded series is both a cost and a comprehension problem.
+DEFAULT_MAX_POINTS = 20
+
+
+def _summarize_series(values: Sequence[Sequence[Any]]) -> Dict[str, Any]:
+    """Reduce a Prometheus value series to the statistics that matter."""
+
+    numbers: List[float] = []
+
+    for point in values:
+        try:
+            numbers.append(float(point[1]))
+        except (IndexError, TypeError, ValueError):
+            continue
+
+    if not numbers:
+        return {"points": 0}
+
+    return {
+        "points": len(numbers),
+        "min": min(numbers),
+        "max": max(numbers),
+        "mean": sum(numbers) / len(numbers),
+        "last": numbers[-1],
+    }
+
+
+def _downsample(values: Sequence[Any], max_points: int) -> List[Any]:
+    """Evenly thin a series, always keeping the first and last points."""
+
+    if max_points <= 0 or len(values) <= max_points:
+        return list(values)
+
+    step = (len(values) - 1) / (max_points - 1)
+    picked = [values[round(i * step)] for i in range(max_points)]
+    picked[-1] = values[-1]
+
+    return picked
+
+def _finalize(
+    results: List[Dict[str, Any]],
+    summarize: bool,
+    max_points: int,
+) -> List[Dict[str, Any]]:
+    """Attach per-series statistics and cap the raw point count."""
+
+    if not summarize:
+        return results
+
+    finalized = []
+
+    for series in results:
+        values = series.get("values") or []
+        finalized.append({
+            **series,
+            "summary": _summarize_series(values),
+            "values": _downsample(values, max_points),
+        })
+
+    return finalized
+
+
+def query_prometheus(
+    query: str,
+    time_range: str = "1h",
+    step: str = "1m",
+    summarize: bool = True,
+    max_points: int = DEFAULT_MAX_POINTS,
+) -> Dict[str, Any]:
     """
     Query Prometheus for historical metric data over a time range.
 
@@ -18,6 +96,11 @@ def query_prometheus(query: str, time_range: str = "1h", step: str = "1m") -> Di
         query: The PromQL expression.
         time_range: The time range to query (e.g. "1h", "1d", "30m").
         step: The resolution step (e.g. "1m", "5m").
+        summarize: Attach min/max/mean/last per series and thin the raw
+            points to *max_points*. On by default because these results go
+            straight into the model's context, where a long raw series is
+            expensive and harder to reason over than its statistics.
+        max_points: Cap on raw points retained per series when summarizing.
 
     Returns:
         A dictionary with the success status and the time-series data.
@@ -31,12 +114,12 @@ def query_prometheus(query: str, time_range: str = "1h", step: str = "1m") -> Di
         return {
             "success": True,
             "query": query,
-            "results": [
-                {
-                    "metric": {"pod": "mock-pod-1", "namespace": "default"},
-                    "values": values
-                }
-            ]
+            "results": _finalize(
+                [{"metric": {"pod": "mock-pod-1", "namespace": "default"},
+                  "values": values}],
+                summarize,
+                max_points,
+            ),
         }
 
     try:
@@ -72,7 +155,7 @@ def query_prometheus(query: str, time_range: str = "1h", step: str = "1m") -> Di
         return {
             "success": True,
             "query": query,
-            "results": results
+            "results": _finalize(results, summarize, max_points),
         }
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to query Prometheus: {e}")
@@ -107,23 +190,52 @@ def query_pod_resources(namespace: str, pod_name: str, window: str = "1h") -> Di
     if not mem_res["success"]:
         return mem_res
 
-    # Also fetch limits from the K8s API directly to compare
-    limits = {"cpu": "Unknown", "memory": "Unknown"}
+    # Also fetch limits from the K8s API directly to compare. Summed across
+    # containers: the usage queries above aggregate the whole pod, so a
+    # per-container limit would not be comparable against them.
+    limits: Dict[str, Any] = {
+        "cpu_cores": None,
+        "memory_bytes": None,
+        "container_count": 0,
+        "source": "unavailable",
+    }
+
     try:
         from kubernetes import client, config
-        config.load_kube_config()
+        from kubernetes.config.config_exception import ConfigException
+
+        from .kubernetes_capacity import (
+            _parse_cpu_quantity,
+            _parse_memory_quantity,
+        )
+
+        try:
+            config.load_incluster_config()
+        except ConfigException:
+            config.load_kube_config()
+
         core_api = client.CoreV1Api()
         pod = core_api.read_namespaced_pod(name=pod_name, namespace=namespace)
 
-        cpu_limit = 0
-        mem_limit = 0
-        for container in pod.spec.containers:
-            if container.resources and container.resources.limits:
-                if 'cpu' in container.resources.limits:
-                    # Simplify to string as it might have 'm' (millicores)
-                    limits["cpu"] = container.resources.limits['cpu']
-                if 'memory' in container.resources.limits:
-                    limits["memory"] = container.resources.limits['memory']
+        cpu_total = 0.0
+        memory_total = 0
+        containers = pod.spec.containers or []
+
+        for container in containers:
+            resources = getattr(container, "resources", None)
+            container_limits = getattr(resources, "limits", None) or {}
+
+            if "cpu" in container_limits:
+                cpu_total += _parse_cpu_quantity(container_limits["cpu"])
+            if "memory" in container_limits:
+                memory_total += _parse_memory_quantity(container_limits["memory"])
+
+        limits = {
+            "cpu_cores": cpu_total,
+            "memory_bytes": memory_total,
+            "container_count": len(containers),
+            "source": "kubernetes",
+        }
     except Exception as e:
         logger.warning(f"Could not fetch pod limits from k8s API: {e}")
 

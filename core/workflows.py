@@ -2,12 +2,34 @@ import os
 import yaml
 import json
 import logging
+import uuid
 from typing import Any, Dict, List, Optional
 from pathlib import Path
+
+from core.settings import DANGEROUS_TOOLS
+from providers.base import BaseLLM
 
 logger = logging.getLogger(__name__)
 
 WORKFLOWS_DIR = Path(__file__).parent.parent / "skills" / "workflows"
+
+
+def _supports_streaming(provider: Any) -> bool:
+    """True only when *provider* genuinely implements ``generate_stream``.
+
+    ``BaseLLM`` is a ``Protocol``, and ClaudeProvider/GPTProvider subclass
+    it explicitly without implementing this method — so they inherit its
+    ``...`` body, which returns ``None``. ``hasattr`` reports ``True`` and
+    iterating the result then raises ``TypeError``. Compare the bound
+    implementation against the Protocol's to tell them apart.
+    """
+
+    own = getattr(type(provider), "generate_stream", None)
+
+    if own is None:
+        return False
+
+    return own is not getattr(BaseLLM, "generate_stream", None)
 
 def list_workflows() -> List[Dict[str, str]]:
     """Return a list of available workflows."""
@@ -61,7 +83,25 @@ async def run_workflow(
         return
 
     yield {"type": "status", "data": {"text": f"Starting workflow: {workflow_name}"}}
-    
+
+    # Goal 3 of the 7/29 meeting measures token usage and time-to-resolution
+    # per workflow, so the run has to account for what it spends.
+    usage = {
+        "prompt_tokens": 0,
+        "response_tokens": 0,
+        "llm_turns": 0,
+        "tool_calls": 0,
+        "steps": 0,
+    }
+
+    def _record(response: Any) -> None:
+        """Accumulate token usage from one LLM turn."""
+        usage["llm_turns"] += 1
+        usage["prompt_tokens"] += getattr(response, "prompt_tokens", 0) or 0
+        usage["response_tokens"] += getattr(response, "response_tokens", 0) or 0
+
+    streaming = _supports_streaming(provider)
+
     # Keep track of context across steps
     context_messages = [
         {"role": "system", "content": f"You are executing the '{workflow_name}' workflow. Follow the step instructions carefully."}
@@ -76,9 +116,10 @@ async def run_workflow(
         yield {"type": "workflow_step_start", "data": {"step": step_name, "instruction": instruction}}
         yield {"type": "status", "data": {"text": f"Executing step {step_idx+1}/{len(steps)}: {step_name}"}}
 
-        # If approval is required, pause and ask UI
+        # Coarse pre-gate declared in the workflow YAML. The per-call gate
+        # below is the control that actually holds, since a step can call a
+        # dangerous tool without setting this flag.
         if requires_approval:
-            import uuid
             approval_id = str(uuid.uuid4())
             yield {"type": "approval_required", "data": {
                 "approval_id": approval_id,
@@ -113,7 +154,7 @@ async def run_workflow(
             llm_response = None
             final_text = ""
             
-            if hasattr(provider, 'generate_stream'):
+            if streaming:
                 q = asyncio.Queue()
                 def _worker():
                     try:
@@ -146,22 +187,80 @@ async def run_workflow(
                 llm_response = await loop.run_in_executor(None, provider.generate, context_messages)
                 final_text = llm_response.text or ""
                 yield {"type": "chunk", "data": {"text": f"\n\n**Step {step_name} result:**\n{final_text}"}}
-                
+
+            if llm_response is None:
+                # A stream that ended without a final LLMResponse. Treat it
+                # as text-only rather than crashing on .has_tool_calls.
+                yield {"type": "status", "data": {
+                    "text": f"Step '{step_name}' returned no structured response."
+                }}
+            else:
+                _record(llm_response)
+
         except Exception as exc:
             yield {"type": "error", "data": {"detail": f"Provider error: {exc}"}}
             return
 
         # If tools were called, execute them
-        if llm_response.has_tool_calls:
+        if llm_response is not None and llm_response.has_tool_calls:
             tool_names = [tc.name for tc in llm_response.tool_calls]
             yield {"type": "status", "data": {"text": f"Executing tools: {', '.join(tool_names)}"}}
             
             calls = [{"name": tc.name, "arguments": dict(tc.arguments or {})} for tc in llm_response.tool_calls]
+
+            # Gate on the call the model actually made. The step-level
+            # requires_approval flag fires before the model has decided
+            # anything, and a step can reach a dangerous tool without it —
+            # security_audit.yaml's scan_actual_ports does exactly that with
+            # run_shell_commands.
+            dangerous = [c for c in calls if c["name"] in DANGEROUS_TOOLS]
+
+            if dangerous:
+                approval_id = str(uuid.uuid4())
+                yield {"type": "approval_required", "data": {
+                    "approval_id": approval_id,
+                    # Real names and real arguments, so the user can see what
+                    # they are approving rather than just a step name.
+                    "tools": [
+                        {"name": c["name"], "arguments": c["arguments"]}
+                        for c in dangerous
+                    ],
+                }}
+                yield {"type": "status", "data": {"text": "Waiting for your approval..."}}
+
+                if not await wait_for_approval_fn(approval_id):
+                    yield {"type": "status", "data": {"text": "Execution denied by user."}}
+                    yield {"type": "workflow_step_complete", "data": {
+                        "step": step_name,
+                        "status": "denied",
+                    }}
+                    yield {"type": "usage", "data": usage}
+                    return
+
             tool_results = await execute_tools_batch_fn(calls)
-            
+            usage["tool_calls"] += len(calls)
+
             for tc, result in zip(llm_response.tool_calls, tool_results):
                 yield {"type": "tool", "data": {"name": tc.name, "success": result.get("success", False)}}
-                
+
+            failed = [r for r in tool_results if not r.get("success", False)]
+
+            if failed and step.get("halt_on_failure", True):
+                # A verify step that fails must stop the workflow, not be
+                # decorated with a success marker. Set halt_on_failure:false
+                # in the YAML for steps that may legitimately fail.
+                yield {"type": "workflow_step_complete", "data": {
+                    "step": step_name,
+                    "status": "failed",
+                    "failed_tools": [r.get("tool") for r in failed],
+                }}
+                yield {"type": "error", "data": {"detail": (
+                    f"Step '{step_name}' failed: "
+                    + ", ".join(str(r.get("tool", "?")) for r in failed)
+                )}}
+                yield {"type": "usage", "data": usage}
+                return
+
             tool_results_text = "Tool Results:\n"
             for result in tool_results:
                 if result["success"]:
@@ -176,7 +275,10 @@ async def run_workflow(
             try:
                 if hasattr(provider, "enable_tools"):
                     provider.enable_tools([])
-                if hasattr(provider, 'generate_stream'):
+
+                llm_response_2 = None
+
+                if streaming:
                     q2 = asyncio.Queue()
                     def _worker2():
                         try:
@@ -209,6 +311,9 @@ async def run_workflow(
                     final_text = llm_response_2.text or "Completed tool execution."
                     yield {"type": "chunk", "data": {"text": final_text}}
                     
+                if llm_response_2 is not None:
+                    _record(llm_response_2)
+
                 context_messages.append({"role": "assistant", "content": final_text})
             except Exception as exc:
                 yield {"type": "error", "data": {"detail": f"Provider error during follow-up: {exc}"}}
@@ -216,9 +321,12 @@ async def run_workflow(
         else:
             context_messages.append({"role": "assistant", "content": final_text})
 
+        usage["steps"] += 1
+
         yield {"type": "chunk", "data": {"text": "\n"}}
         yield {"type": "workflow_step_complete", "data": {"step": step_name, "status": "success"}}
 
     yield {"type": "status", "data": {"text": "Workflow completed successfully."}}
+    yield {"type": "usage", "data": usage}
     yield {"type": "message", "data": {"text": "Workflow completed."}}
     yield {"type": "done", "data": {}}

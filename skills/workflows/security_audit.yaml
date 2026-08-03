@@ -7,6 +7,10 @@ steps:
   - name: "scan_actual_ports"
     instruction: "Run 'netstat -tuln' or 'ss -tuln' inside the running containers using run_shell_commands (e.g., via 'kubectl exec <pod> -- ss -tuln') to find the actual listening ports."
     tools: ["run_shell_commands"]
+    # Executing commands inside a running container is a mutating action per
+    # references/safety.md. The engine also gates run_shell_commands per call,
+    # so this is a second layer rather than the only one.
+    requires_approval: true
     
   - name: "flag_discrepancies"
     instruction: "Compare the declared ports from step 1 against the actual listening ports from step 2. Identify any pod that has opened a port not explicitly defined in its spec."

@@ -10,6 +10,23 @@ from dotenv import load_dotenv
 from providers.base import ProviderConfig
 
 
+# Tools that change system or cluster state and require explicit human
+# approval before they run. Defined here rather than in main.py so that
+# both the chat path and core.workflows can import it — main.py imports
+# core.workflows, so the reverse import would be circular.
+DANGEROUS_TOOLS = {
+    "scale_workload",
+    "restart_workload",
+    "cordon_node",
+    "drain_k8s_node",
+    "run_shell_commands",
+    "run_python_script",
+    "execute_free_disk_space",
+    "hibernate_background_apps",
+    "cancel_slurm_job",
+    "update_slurm_job_qos",
+}
+
 SYSTEM_PROMPT = (
     "You are EdgePilot, an on-premises AI copilot that proactively monitors and manages the user's system. "
     "You have access to powerful tools - USE THEM AUTOMATICALLY without asking permission.\n\n"

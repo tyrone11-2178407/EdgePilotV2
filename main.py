@@ -40,6 +40,7 @@ from core.tool_schemas import (
 from core.interface import ask_question, schedule_operation
 from core.semantic_cache import SemanticCache
 from core.settings import (
+    DANGEROUS_TOOLS,
     DEFAULT_PROVIDER,
     PROVIDER_ENV_SETTINGS,
     SYSTEM_PROMPT,
@@ -325,18 +326,8 @@ app = FastAPI(title="EdgePilot Backend", version="0.4.0")
 
 # Store futures for tools requiring human-in-the-loop approval
 PENDING_APPROVALS: Dict[str, asyncio.Future] = {}
-DANGEROUS_TOOLS = {
-    "scale_workload", 
-    "restart_workload", 
-    "cordon_node", 
-    "run_shell_commands", 
-    "run_python_script",
-    "execute_free_disk_space",
-    "hibernate_background_apps",
-    "cancel_slurm_job",
-    "update_slurm_job_qos",
-    "drain_k8s_node"
-}
+# DANGEROUS_TOOLS now lives in core.settings so core.workflows can gate on
+# the same set — see the import above.
 
 # ── Semantic Cache ──────────────────────────────────────────────────────
 # Initialized lazily: the embedding model is only loaded on the first
