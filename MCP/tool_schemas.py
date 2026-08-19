@@ -376,7 +376,7 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
     },
     {
         "name": "migrate_workload",
-        "description": "Migrates a Kubernetes deployment to a specific node by patching its nodeSelector. Requires human approval.",
+        "description": "Move a Kubernetes deployment onto a specific node and verify it lands. Refuses if the target node does not exist, is cordoned, or lacks free CPU/memory for the workload. Kubernetes performs the move as a rolling update, so the new pod starts and becomes ready before the old one stops. Returns success only after every replica is ready on the new placement; a stuck rollout is reported as a failure. Requires human approval.",
         "parameters": {
             "type": "object",
             "properties": {
