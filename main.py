@@ -28,6 +28,7 @@ from providers.base import ChatMessage, ProviderConfig
 from tools.metrics import gather_metrics
 from tools.scheduler import _REGISTRY
 from MCP import (
+    MUTATING_TOOLS,
     execute_tool,
     execute_tool_async,
     execute_tools_batch,
@@ -362,20 +363,24 @@ PENDING_APPROVALS: Dict[str, asyncio.Future] = {}
 # task list, not the cluster. `test_dangerous_tools_all_mutate` enforces the
 # subset relationship so a tool cannot be gated here without being classified
 # as mutating there.
-DANGEROUS_TOOLS = {
-    "scale_workload",
-    "restart_workload",
-    "cordon_node",
-    "run_shell_commands",
-    "run_python_script",
-    "execute_free_disk_space",
-    "hibernate_background_apps",
-    "cancel_slurm_job",
-    "update_slurm_job_qos",
-    "drain_k8s_node",
-    "apply_resource_requests",
-    "migrate_workload",
+# Which tools need a human to say yes.
+#
+# Derived from MUTATING_TOOLS rather than hand-maintained. The previous
+# hand-written list omitted `end_task`, which terminates processes — asked to
+# relieve an overloaded node, the assistant force-quit the user's Notion and
+# Chrome with no approval prompt at all. A list you have to remember to update
+# fails open, and failing open on a tool that kills processes is not a
+# tolerable default.
+#
+# `EXEMPT_FROM_APPROVAL` is the explicit, argued exception list. Adding a tool
+# there is a deliberate decision; forgetting to add a tool anywhere now means
+# it is gated, which is the safe direction to be wrong in.
+EXEMPT_FROM_APPROVAL = {
+    # Records a historical sample for offline analysis. Touches no live system.
+    "ingest_historical_sample",
 }
+
+DANGEROUS_TOOLS = MUTATING_TOOLS - EXEMPT_FROM_APPROVAL
 
 # ── Semantic Cache ──────────────────────────────────────────────────────
 # Initialized lazily: the embedding model is only loaded on the first

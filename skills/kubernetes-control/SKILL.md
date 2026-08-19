@@ -30,6 +30,12 @@ only means Kubernetes accepted the request.
   limits, and Pod slots.
 - Use `evaluate_kubernetes_workload` for workload-placement questions.
 - Use `inspect_kubernetes_deployment` before and after scaling or restarting.
+- Use `plan_cluster_rebalance` when a node is under pressure or the user asks
+  to rebalance, fix, or relieve a cluster. It surveys every node and returns an
+  ordered plan with a reason for each step. Call it before proposing any
+  remedy: it does the capacity arithmetic, so the numbers in your proposal are
+  measured rather than estimated. It only proposes; carry out its steps with
+  the approval-gated control tools.
 
 Read-only inspection does not require approval.
 
@@ -79,8 +85,8 @@ Prefer the first.
 
 Procedure:
 
-- Inspect every node, not only the one reported as stressed.
-- Identify over-sized reservations across the cluster.
+- Call `plan_cluster_rebalance` first; do not work the arithmetic out yourself.
+- Present its steps and reasons to the user as the proposed plan.
 - Choose reduction over movement wherever both would work.
 - Verify the receiving node has room before proposing any move.
 - Present one plan covering every step, with the reason for each.
