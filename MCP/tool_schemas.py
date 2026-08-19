@@ -375,6 +375,14 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
         }
     },
     {
+        "name": "plan_cluster_rebalance",
+        "description": "Survey every node and propose an ordered plan to relieve any node under pressure. Read-only: it proposes, it does not act. Prefers reducing an over-sized reservation (which restarts nothing) over moving a workload (which does). Refuses to propose moving a StatefulSet, a Job, or anything with attached storage, because a restart destroys work in progress. Returns the pressured nodes, the ordered steps with a reason for each, and notes explaining anything considered and rejected. Execute the steps with scale_workload, apply_resource_requests or migrate_workload, each of which requires its own approval.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
         "name": "migrate_workload",
         "description": "Move a Kubernetes deployment onto a specific node and verify it lands. Refuses if the target node does not exist, is cordoned, or lacks free CPU/memory for the workload. Kubernetes performs the move as a rolling update, so the new pod starts and becomes ready before the old one stops. Returns success only after every replica is ready on the new placement; a stuck rollout is reported as a failure. Requires human approval.",
         "parameters": {

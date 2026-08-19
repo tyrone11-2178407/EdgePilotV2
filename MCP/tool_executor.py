@@ -27,6 +27,7 @@ from tools import (
     search,
     suggest_capacity_window,
 )
+from tools.rebalance import plan_cluster_rebalance
 from tools.kubernetes_actions import (
     apply_resource_requests,
     cordon_node,
@@ -105,6 +106,7 @@ class ToolExecutor:
             "load_skill": self._execute_load_skill,
             "recommend_rightsizing": self._execute_recommend_rightsizing,
             "analyze_bottlenecks": self._execute_analyze_bottlenecks,
+            "plan_cluster_rebalance": self._execute_plan_cluster_rebalance,
             "analyze_workload_families": self._execute_analyze_workload_families,
             "apply_resource_requests": self._execute_apply_resource_requests,
         }
@@ -309,6 +311,11 @@ class ToolExecutor:
                 args.get("gpu_target_utilization", 0.7) or 0.7
             ),
         )
+
+    def _execute_plan_cluster_rebalance(
+        self, args: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        return plan_cluster_rebalance()
 
     def _execute_analyze_bottlenecks(
         self, args: Dict[str, Any]
