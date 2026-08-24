@@ -769,3 +769,37 @@ def test_runs_record_real_token_counts():
     assert result["tokens_in"] == 14000, "tokens must sum across turns"
     assert result["tokens_out"] == 880
     assert "cache_read_tokens" in result
+
+
+def test_every_state_changing_tool_is_approval_gated():
+    """The gate must fail closed. It did not, and it cost a user their work.
+
+    `end_task` terminates processes but was absent from the hand-written
+    DANGEROUS_TOOLS list. Asked to relieve an overloaded node, the assistant
+    called it three times and force-quit the user's Notion and Chrome with no
+    approval prompt. Any tool omitted from a hand-kept list runs freely, so
+    the list is now derived and exceptions must be argued for explicitly.
+    """
+    import main
+    from MCP.tool_schemas import MUTATING_TOOLS
+
+    ungated = MUTATING_TOOLS - main.DANGEROUS_TOOLS
+
+    assert ungated <= main.EXEMPT_FROM_APPROVAL, (
+        f"state-changing tools running without approval: "
+        f"{sorted(ungated - main.EXEMPT_FROM_APPROVAL)}"
+    )
+    assert "end_task" in main.DANGEROUS_TOOLS, "end_task terminates processes"
+
+
+def test_the_approval_exemption_list_stays_small_and_deliberate():
+    """Each exemption is a decision someone has to defend."""
+    import main
+
+    assert len(main.EXEMPT_FROM_APPROVAL) <= 3, (
+        "the exemption list is growing; each entry lets a state-changing tool "
+        "run unsupervised and needs a stated reason"
+    )
+    assert main.EXEMPT_FROM_APPROVAL <= {
+        schema_name for schema_name in main.EXEMPT_FROM_APPROVAL
+    }
