@@ -7,7 +7,6 @@ const state = {
   chats: [],
   activeChat: null,
   metricsMode: 'live',
-  metricsTimer: null,
   metricsLastSnapshot: null,
   metricsErrorCount: 0,
   isThinking: false,
@@ -108,7 +107,6 @@ const MODE_CONFIG = {
 };
 
 const updatePromptPlaceholder = () => {
-  const providerName = state.providers[state.providerId]?.name || 'EdgePilot';
   const modeConfig = MODE_CONFIG[state.currentMode];
   promptInputEl.placeholder = modeConfig.placeholder;
 };
@@ -145,6 +143,12 @@ const renderProviders = () => {
   });
 
   const configured = entries.filter(([, meta]) => meta.configured);
+  if (configured.length && !state.providerId) {
+    // Honor the backend's preferred provider if available
+    const preferred = configured.find(([, meta]) => meta.preferred);
+    state.providerId = preferred ? preferred[0] : configured[0][0];
+  }
+
   if (!configured.length) {
     providerSelectEl.value = '';
     providerSelectEl.disabled = true;
@@ -310,12 +314,12 @@ const renderJobs = () => {
   }
 
   if (state.jobsScope === 'chat' && !state.activeChat) {
-    jobsContainerEl.innerHTML = '<div class="empty-state">Select a chat to view its jobs.</div>';
+    jobsContainerEl.innerHTML = '<div class="empty-state">Select a chat to view jobs</div>';
     return;
   }
 
   if (!state.jobs.length) {
-    jobsContainerEl.innerHTML = '<div class="empty-state">No jobs found.</div>';
+    jobsContainerEl.innerHTML = '<div class="empty-state">No jobs found</div>';
     return;
   }
 
@@ -470,10 +474,10 @@ const renderMetrics = (metrics) => {
   const cards = [
     { label: 'CPU', value: `${metrics.cpu?.percent?.toFixed(1) ?? '0'}%` },
     { label: 'Memory', value: metrics.memory?.used ? `${(metrics.memory.used / 1_073_741_824).toFixed(1)} GB` : '0 GB' },
-    { label: 'Disk R', value: metrics.disk?.read_bytes ? `${(metrics.disk.read_bytes / 1_000_000).toFixed(0)} MB` : '0 MB' },
-    { label: 'Disk W', value: metrics.disk?.write_bytes ? `${(metrics.disk.write_bytes / 1_000_000).toFixed(0)} MB` : '0 MB' },
-    { label: 'Net Sent', value: metrics.network?.bytes_sent ? `${(metrics.network.bytes_sent / 1_000_000).toFixed(0)} MB` : '0 MB' },
-    { label: 'Net Recv', value: metrics.network?.bytes_recv ? `${(metrics.network.bytes_recv / 1_000_000).toFixed(0)} MB` : '0 MB' },
+    { label: 'Disk R', value: metrics.disk?.read_bytes ? `${(metrics.disk.read_bytes / 1_000_000).toFixed(0)} MB/s` : '0 MB/s' },
+    { label: 'Disk W', value: metrics.disk?.write_bytes ? `${(metrics.disk.write_bytes / 1_000_000).toFixed(0)} MB/s` : '0 MB/s' },
+    { label: 'Net Sent', value: metrics.network?.bytes_sent ? `${(metrics.network.bytes_sent / 1_000_000).toFixed(0)} MB/s` : '0 MB/s' },
+    { label: 'Net Recv', value: metrics.network?.bytes_recv ? `${(metrics.network.bytes_recv / 1_000_000).toFixed(0)} MB/s` : '0 MB/s' },
   ];
 
   updateCards(cards);
@@ -562,6 +566,11 @@ const setViewMode = (mode) => {
   jobsPanelEl.classList.add('hidden');
   settingsPanelEl.classList.add('hidden');
 
+  // Hide composer and token counter on non-chat views
+  const composerEl = document.querySelector('.composer');
+  if (composerEl) composerEl.classList.toggle('hidden', mode !== 'chat');
+  tokenCounterEl.classList.toggle('hidden', mode !== 'chat');
+
   if (mode === 'jobs') {
     jobsPanelEl.classList.remove('hidden');
     updateJobsScopeControl();
@@ -599,7 +608,7 @@ const initMetricsWebSocket = () => {
   if (metricsWs) {
     metricsWs.close();
   }
-  const wsUrl = BACKEND_URL.replace('http://', 'ws://') + '/api/metrics/stream';
+  const wsUrl = BACKEND_URL.replace(/^http/, 'ws') + '/api/metrics/stream';
   metricsWs = new WebSocket(wsUrl);
 
   metricsWs.onmessage = (event) => {
@@ -628,7 +637,7 @@ const initMetricsWebSocket = () => {
   };
 };
 
-const loadMetrics = async (quiet = false, retryCount = 0) => {
+const loadMetrics = async () => {
   if (state.metricsMode !== 'live') return;
   if (!metricsWs || metricsWs.readyState === WebSocket.CLOSED) {
     initMetricsWebSocket();
@@ -677,6 +686,10 @@ const sendMessage = async (prompt) => {
   if (modeConfig.promptPrefix && !prompt.toLowerCase().startsWith(modeConfig.promptPrefix.toLowerCase())) {
     finalPrompt = modeConfig.promptPrefix + prompt.trim();
   }
+
+  // Disable composer while in flight
+  promptInputEl.disabled = true;
+  newChatBtn.disabled = true;
 
   // Add user message immediately (show the original prompt, not the prefixed one)
   const userMessage = {
@@ -748,11 +761,12 @@ const sendMessage = async (prompt) => {
         if (eventType === 'status') {
           setStatus(payload.text);
         } else if (eventType === 'chunk') {
+          if (!payload.text) continue;
           hideThinking();
           let streamBubble = document.getElementById('stream-bubble');
           if (!streamBubble) {
             streamBubble = document.createElement('div');
-            streamBubble.className = 'message bot-message';
+            streamBubble.className = 'message assistant';
             streamBubble.id = 'stream-bubble';
             messagesEl.appendChild(streamBubble);
           }
@@ -765,20 +779,50 @@ const sendMessage = async (prompt) => {
           wasCached = true;
           setStatus('Semantic cache found (instant response)');
         } else if (eventType === 'approval_required') {
+          hideThinking();
+          const streamBubble = document.getElementById('stream-bubble');
+          if (streamBubble && !streamBubble.textContent.trim()) {
+            streamBubble.remove();
+          }
+
           const approvalId = payload.approval_id;
           const toolsList = payload.tools.map(t => `${t.name}(${JSON.stringify(t.arguments)})`).join(', ');
           
           const approvalBubble = document.createElement('div');
-          approvalBubble.className = 'message bot-message approval-prompt';
+          approvalBubble.className = 'message assistant';
           approvalBubble.id = `approval-bubble-${approvalId}`;
-          approvalBubble.innerHTML = `
-            <strong>⚠️ Approval Required</strong><br/>
-            EdgePilot wants to execute the following actions: <br/><code>${toolsList}</code><br/>
-            <div style="margin-top: 10px; display: flex; gap: 10px;">
-              <button onclick="window.submitApproval('${approvalId}', true)" style="background: var(--brand-blue); border: none; color: white; padding: 5px 15px; border-radius: 4px; cursor: pointer;">Allow</button>
-              <button onclick="window.submitApproval('${approvalId}', false)" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 5px 15px; border-radius: 4px; cursor: pointer;">Deny</button>
-            </div>
-          `;
+
+          const title = document.createElement('strong');
+          title.textContent = '⚠️ Approval Required';
+          approvalBubble.appendChild(title);
+          approvalBubble.appendChild(document.createElement('br'));
+
+          const desc = document.createTextNode('EdgePilot wants to execute: ');
+          approvalBubble.appendChild(desc);
+          approvalBubble.appendChild(document.createElement('br'));
+
+          const code = document.createElement('code');
+          code.textContent = toolsList;
+          approvalBubble.appendChild(code);
+          approvalBubble.appendChild(document.createElement('br'));
+
+          const btnRow = document.createElement('div');
+          btnRow.style.cssText = 'margin-top: 10px; display: flex; gap: 10px;';
+
+          const allowBtn = document.createElement('button');
+          allowBtn.textContent = 'Allow';
+          allowBtn.className = 'primary-btn';
+          allowBtn.addEventListener('click', () => window.submitApproval(approvalId, true));
+
+          const denyBtn = document.createElement('button');
+          denyBtn.textContent = 'Deny';
+          denyBtn.className = 'ghost-btn';
+          denyBtn.addEventListener('click', () => window.submitApproval(approvalId, false));
+
+          btnRow.appendChild(allowBtn);
+          btnRow.appendChild(denyBtn);
+          approvalBubble.appendChild(btnRow);
+
           messagesEl.appendChild(approvalBubble);
           messagesEl.scrollTop = messagesEl.scrollHeight;
           setStatus('Waiting for approval...');
@@ -830,6 +874,11 @@ const sendMessage = async (prompt) => {
     state.activeChat.messages.pop();
     renderMessages();
     setStatus(`Send failed: ${error.message}`, true);
+  } finally {
+    // Re-enable composer
+    promptInputEl.disabled = false;
+    newChatBtn.disabled = false;
+    promptInputEl.focus();
   }
 };
 

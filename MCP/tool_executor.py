@@ -127,6 +127,18 @@ class ToolExecutor:
 
         try:
             result = self.tools[tool_name](arguments)
+            # Propagate the tool's own success/failure flag when present.
+            # Many tools (e.g. kubernetes_actions) return {"success": False,
+            # "error": ...} on API errors; wrapping that as success=True
+            # misleads the LLM into thinking the action succeeded.
+            if isinstance(result, dict) and result.get("success") is False:
+                return {
+                    "success": False,
+                    "tool": tool_name,
+                    "arguments": arguments,
+                    "error": result.get("error", "Tool reported failure"),
+                    "result": result,
+                }
             return {
                 "success": True,
                 "tool": tool_name,
@@ -364,7 +376,7 @@ class ToolExecutor:
         delay_seconds = args.get("delay_seconds", 0)
         chat_id = args.get("chat_id")
 
-        # Use launcher.py's launch function
+        # Use scheduler's launch function
         success = launch(app_name, delay_seconds, chat_id=chat_id)
 
         if success:

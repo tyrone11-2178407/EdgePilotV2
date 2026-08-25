@@ -143,9 +143,9 @@ def test_cordon_node_handles_api_error(mock_get_core_client):
     assert "403" in result["error"]
 
 
-@patch("tools.kubernetes_actions.config.load_kube_config")
-def test_apps_client_reports_configuration_error(mock_load_config):
-    mock_load_config.side_effect = RuntimeError("No kubeconfig found")
+@patch("tools.kubernetes_actions._get_client")
+def test_apps_client_reports_configuration_error(mock_get_client):
+    mock_get_client.side_effect = RuntimeError("Could not load Kubernetes configuration")
 
     result = None
 
@@ -162,9 +162,9 @@ def test_apps_client_reports_configuration_error(mock_load_config):
     assert "Could not load Kubernetes configuration" in result
 
 
-@patch("tools.kubernetes_actions.config.load_kube_config")
-def test_core_client_reports_configuration_error(mock_load_config):
-    mock_load_config.side_effect = RuntimeError("No kubeconfig found")
+@patch("tools.kubernetes_actions._get_core_client")
+def test_core_client_reports_configuration_error(mock_get_core_client):
+    mock_get_core_client.side_effect = RuntimeError("Could not load Kubernetes configuration")
 
     result = None
 

@@ -17,31 +17,23 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # ── Tools whose results should NOT be cached ────────────────────────────
-# These tools mutate system state; caching their responses would be wrong.
-_STATE_CHANGING_TOOLS: Set[str] = frozenset({
-    "launch",
-    "end_task",
-    "run_shell_commands",
-    "run_python_script",
-    "run_shell",
-    "run_python",
-    "scale_workload",
-    "restart_workload",
-    "cordon_node",
-    "apply_resource_requests",
-    # Observability tools (responses should not be cached)
+# Derived from the single source of truth (MCP.tool_schemas.MUTATING_TOOLS)
+# plus read-only tools whose output is volatile and must not be served stale.
+from MCP.tool_schemas import MUTATING_TOOLS
+
+# Read-only but volatile — caching these would serve stale system state.
+_VOLATILE_READ_ONLY: Set[str] = frozenset({
     "gather_metrics",
     "report_edge_status",
     "evaluate_capacity",
     "suggest_capacity_window",
-    # Cluster analysis. Caching would serve stale cluster state, and keeps
-    # job-derived data out of the cache entirely — the Quest dataset is
-    # anonymized under a data-use agreement.
     "recommend_rightsizing",
     "analyze_bottlenecks",
     "analyze_workload_families",
     "inspect_kubernetes_cluster",
 })
+
+_STATE_CHANGING_TOOLS: Set[str] = frozenset(MUTATING_TOOLS | _VOLATILE_READ_ONLY)
 
 
 @dataclass

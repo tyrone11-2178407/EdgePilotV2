@@ -23,7 +23,7 @@ Perfect for users who want a simple, guided installation process.
 
 The installer will:
 - ✅ Download the latest version of EdgePilot
-- ✅ Ask for your API keys (Gemini required, Claude/GPT optional)
+- ✅ Ask for your API keys (Gemini required, Claude optional)
 - ✅ Install all Python and Node.js dependencies
 - ✅ Configure your environment automatically
 - ✅ Create a desktop shortcut/application
@@ -64,7 +64,6 @@ Create `env/.env` file:
 ```bash
 GEMINI_API_KEY=your_gemini_key_here
 ANTHROPIC_API_KEY=your_claude_key_here  # Optional
-OPENAI_API_KEY=your_openai_key_here     # Optional
 DEFAULT_PROVIDER=gemini
 
 # Optional: Prometheus metrics
@@ -82,7 +81,6 @@ DEFAULT_SMTP_USE_TLS=true
 **Get API Keys:**
 - **Gemini** (Required): https://aistudio.google.com/app/apikey
 - **Claude** (Optional): https://console.anthropic.com/
-- **GPT** (Optional): https://platform.openai.com/api-keys
 
 ### 4. Create Settings File
 
@@ -121,21 +119,18 @@ If you want to build the installer yourself:
 ### Windows
 
 ```bash
-cd installer
-build_windows.bat
+pyinstaller --onefile --windowed --icon=assets/logo.ico --name=EdgePilot-Installer-Windows-v1.0.1 installer/install_windows.py
 ```
 
-Output: `installer/dist/EdgePilot-Installer.exe`
+Output: `dist/EdgePilot-Installer-Windows-v1.0.1.exe`
 
 ### macOS
 
 ```bash
-cd installer
-chmod +x build_macos.sh
-./build_macos.sh
+pyinstaller --onefile --windowed --icon=assets/logo.icns --name=EdgePilot-Installer-macOS-v1.0.1 installer/install_macos.py
 ```
 
-Output: `installer/dist/EdgePilot Installer.app`
+Output: `dist/EdgePilot-Installer-macOS-v1.0.1.app`
 
 See [installer/README.md](installer/README.md) for more details.
 
@@ -207,9 +202,9 @@ After installation:
    - Set thresholds for CPU, memory, disk usage
    - Configure email notifications
 
-2. **Try MCP Tools**
+2. **Run Tests**
    ```bash
-   python test_tools.py
+   pytest
    ```
 
 3. **Read the Documentation**
