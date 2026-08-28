@@ -1,4 +1,0 @@
-# Installer dependencies
-# These are only needed to build the installer executable, not for EdgePilot itself
-
-pyinstaller>=5.13.0

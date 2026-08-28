@@ -8,9 +8,11 @@ node_modules/
 # Ignore all __pycache__ folders and .pyc files
 __pycache__/
 *.pyc
+*.py[cod]
 
 # Ignore configs
 .vscode
+.idea/
 
 # Ignore local Claude configuration but share project Skills
 .claude/*
@@ -36,13 +38,25 @@ data/task_history.json
 # Ignore settings with potentially sensitive data
 data/settings.json
 data/usage_monitor.pid
+data/query_cache.json
 
 # Ignore PyInstaller build artifacts
 build/
 dist/
 *.spec
+
+# Coverage and testing artifacts
+.coverage
+htmlcov/
+.pytest_cache/
+
+# OS artifacts
 .DS_Store
-*.py[cod]
+
+# Docker (no Dockerfile currently)
+.dockerignore
+
+# Evaluation raw results (keep summaries)
 evaluations/results/
-kubeconfig-docker.yaml
 evaluations/reliability/results/
+kubeconfig-docker.yaml

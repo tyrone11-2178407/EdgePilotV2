@@ -19,7 +19,6 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 
@@ -44,13 +43,13 @@ from core.settings import (
     load_env,
     provider_config,
 )
+from core.stores import ChatStore, UsageLogger, ToolCallLogger, ensure_data_dir
 
 ROOT_DIR = Path(__file__).parent
 DATA_DIR = ROOT_DIR / "data"
 CHAT_FILE = DATA_DIR / "chat_history.json"
 USAGE_FILE = DATA_DIR / "usage_metrics.json"
 TOOL_HISTORY_FILE = DATA_DIR / "tool_call_history.json"
-FRONTEND_DIR = ROOT_DIR / "frontend"
 
 def _guard_kubernetes_capacity_response(text: str) -> str:
     """Remove unsupported guarantees from Kubernetes capacity answers."""
@@ -85,10 +84,6 @@ def _guard_kubernetes_capacity_response(text: str) -> str:
 
     return guarded
 
-
-def ensure_data_dir(path: Path) -> None:
-    """Create directory if it does not exist."""
-    path.mkdir(parents=True, exist_ok=True)
 
 
 
@@ -157,194 +152,6 @@ class ScheduleRequest(BaseModel):
     delay_seconds: int = Field(0, ge=0)
 
 
-class ChatStore:
-    """Thread-safe JSON storage for chat sessions."""
-
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        ensure_data_dir(self.path.parent)
-        self._lock = threading.Lock()
-        if not self.path.exists():
-            self._write({"sessions": []})
-        self._data = self._read()
-
-    def _read(self) -> Dict[str, object]:
-        with self.path.open("r", encoding="utf-8") as fh:
-            try:
-                return json.load(fh)
-            except json.JSONDecodeError:
-                return {"sessions": []}
-
-    def _write(self, data: Dict[str, object]) -> None:
-        tmp = self.path.with_suffix(".tmp")
-        with tmp.open("w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2)
-        tmp.replace(self.path)
-
-    def list_sessions(self) -> List[Dict[str, object]]:
-        with self._lock:
-            return self._data.get("sessions", [])
-
-    def get_session(self, chat_id: str) -> Dict[str, object]:
-        with self._lock:
-            for session in self._data.get("sessions", []):
-                if session["id"] == chat_id:
-                    return session
-        raise KeyError(chat_id)
-
-    def create_session(self, title: Optional[str] = None) -> Dict[str, object]:
-        session = {
-            "id": str(uuid.uuid4()),
-            "title": title or f"Chat {time.strftime('%H:%M:%S')}",
-            "messages": [],
-            "tokens_used": 0,
-            "tool_calls_count": 0,
-            "created_at": time.time(),
-            "updated_at": time.time(),
-        }
-        with self._lock:
-            sessions = self._data.setdefault("sessions", [])
-            sessions.insert(0, session)
-            self._write(self._data)
-        return session
-
-    def append_messages(self, chat_id: str, messages: List[Dict[str, object]], token_delta: int, tool_calls_delta: int = 0) -> Dict[str, object]:
-        with self._lock:
-            sessions = self._data.get("sessions", [])
-            for session in sessions:
-                if session["id"] == chat_id:
-                    session["messages"].extend(messages)
-                    session["tokens_used"] = int(session.get("tokens_used", 0)) + max(token_delta, 0)
-                    session["tool_calls_count"] = int(session.get("tool_calls_count", 0)) + max(tool_calls_delta, 0)
-                    session["updated_at"] = time.time()
-                    title = (session.get("title") or "").strip().lower()
-                    if not title or title.startswith("new chat") or title.startswith("chat "):
-                        first_user = next(
-                            (m for m in session["messages"] if m.get("role") == "user" and m.get("content")), None
-                        )
-                        if first_user:
-                            snippet = first_user["content"].strip().splitlines()[0][:50]
-                            if snippet:
-                                session["title"] = snippet if len(snippet) > 2 else "Conversation"
-                    self._write(self._data)
-                    return session
-        raise KeyError(chat_id)
-
-    def delete_session(self, chat_id: str) -> bool:
-        """Delete a chat session by ID."""
-        with self._lock:
-            sessions = self._data.get("sessions", [])
-            original_length = len(sessions)
-            self._data["sessions"] = [s for s in sessions if s["id"] != chat_id]
-            if len(self._data["sessions"]) < original_length:
-                self._write(self._data)
-                return True
-        return False
-
-
-class UsageLogger:
-    """Track usage statistics per call."""
-
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        ensure_data_dir(self.path.parent)
-        self._lock = threading.Lock()
-        if not self.path.exists():
-            self._write({"records": []})
-        self._data = self._read()
-
-    def _read(self) -> Dict[str, object]:
-        with self.path.open("r", encoding="utf-8") as fh:
-            try:
-                return json.load(fh)
-            except json.JSONDecodeError:
-                return {"records": []}
-
-    def _write(self, data: Dict[str, object]) -> None:
-        tmp = self.path.with_suffix(".tmp")
-        with tmp.open("w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2)
-        tmp.replace(self.path)
-
-    def log(
-        self,
-        *,
-        provider: str,
-        model: str,
-        prompt_tokens: int,
-        response_tokens: int,
-        latency_ms: float,
-        ok: bool,
-    ) -> None:
-        record = {
-            "ts": time.time(),
-            "provider": provider,
-            "model": model,
-            "prompt_tokens": prompt_tokens,
-            "response_tokens": response_tokens,
-            "latency_ms": latency_ms,
-            "ok": ok,
-        }
-        with self._lock:
-            self._data.setdefault("records", []).append(record)
-            self._write(self._data)
-
-
-class ToolCallLogger:
-    """Track tool calls for debugging purposes."""
-
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        ensure_data_dir(self.path.parent)
-        self._lock = threading.Lock()
-        if not self.path.exists():
-            self._write({"tool_calls": []})
-        self._data = self._read()
-
-    def _read(self) -> Dict[str, object]:
-        with self.path.open("r", encoding="utf-8") as fh:
-            try:
-                return json.load(fh)
-            except json.JSONDecodeError:
-                return {"tool_calls": []}
-
-    def _write(self, data: Dict[str, object]) -> None:
-        tmp = self.path.with_suffix(".tmp")
-        with tmp.open("w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2)
-        tmp.replace(self.path)
-
-    def log(
-        self,
-        *,
-        provider: str,
-        model: str,
-        tool_name: str,
-        arguments: Dict[str, object],
-        result: Dict[str, object],
-        success: bool,
-        latency_ms: float,
-        chat_id: str = None,
-    ) -> None:
-        """Log a tool call execution."""
-        record = {
-            "ts": time.time(),
-            "chat_id": chat_id,
-            "provider": provider,
-            "model": model,
-            "tool_name": tool_name,
-            "arguments": arguments,
-            "result": result,
-            "success": success,
-            "latency_ms": latency_ms,
-        }
-        with self._lock:
-            self._data.setdefault("tool_calls", []).append(record)
-            # Keep only last 1000 tool calls to prevent file from growing too large
-            if len(self._data["tool_calls"]) > 1000:
-                self._data["tool_calls"] = self._data["tool_calls"][-1000:]
-            self._write(self._data)
-
 
 load_env()
 
@@ -357,12 +164,6 @@ app = FastAPI(title="EdgePilot Backend", version="0.4.0")
 # Store futures for tools requiring human-in-the-loop approval
 PENDING_APPROVALS: Dict[str, asyncio.Future] = {}
 
-# Which tools need a human to say yes. A deliberate subset of MUTATING_TOOLS:
-# every tool here changes state, but not everything that changes state is
-# worth interrupting the user for — `launch` and `end_task` act on the local
-# task list, not the cluster. `test_dangerous_tools_all_mutate` enforces the
-# subset relationship so a tool cannot be gated here without being classified
-# as mutating there.
 # Which tools need a human to say yes.
 #
 # Derived from MUTATING_TOOLS rather than hand-maintained. The previous
@@ -392,18 +193,15 @@ app.add_middleware(
     allow_origins=[
         "http://localhost",
         "http://127.0.0.1",
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "null",  # Electron/file:// renderer
+        # "null" is required for the Electron file:// renderer, which sends
+        # Origin: null.  This does NOT mean "any origin" — it matches only
+        # the literal string "null".
+        "null",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-if FRONTEND_DIR.exists():
-    app.mount("/app", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
 
 
 def _to_summary(session: Dict[str, object]) -> ChatSummary:
@@ -421,10 +219,9 @@ def _to_summary(session: Dict[str, object]) -> ChatSummary:
 def _to_detail(session: Dict[str, object]) -> ChatDetail:
     summary = _to_summary(session)
     return ChatDetail(**summary.model_dump(), messages=session.get("messages", []))
+
 @app.get("/", include_in_schema=False)
 def root():
-    if FRONTEND_DIR.exists():
-        return RedirectResponse(url="/app/")
     return {"status": "ok"}
 
 

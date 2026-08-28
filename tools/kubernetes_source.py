@@ -1,6 +1,6 @@
 """Kubernetes workloads as normalized resource records.
 
-Joins what Pods request (``tools.providers``) with what they actually
+Joins what Pods request (``tools.metrics_providers``) with what they actually
 consume (``tools.cluster_usage``), grouped by the controller that owns
 them — Pods are ephemeral, so recommendations must target the Deployment.
 """
@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional
 
 from .cluster_usage import MetricsServerUnavailable, fetch_pod_usage
-from .providers import KubernetesMetricsProvider, _pod_resource_totals
+from .metrics_providers import KubernetesMetricsProvider, _pod_resource_totals
 from .resource_records import ResourceRecord
 
 # Kubernetes builds pod-template-hash from a vowel-free base32 alphabet so

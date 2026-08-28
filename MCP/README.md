@@ -10,7 +10,7 @@ LLM providers and local tools.
 
 The registry currently contains 40 tools. Fifteen are classified as
 state-changing. The FastAPI backend applies explicit human-in-the-loop
-approval to 12 high-impact operations.
+approval to 14 high-impact operations.
 
 See `docs/architecture.md` and `docs/ai-workflow.md` for the system and
 approval workflows.

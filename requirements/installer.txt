@@ -1,0 +1,2 @@
+# Installer-only dependency (for building PyInstaller executables)
+pyinstaller>=6.11.0

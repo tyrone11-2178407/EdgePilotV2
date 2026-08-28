@@ -13,7 +13,7 @@ from typing import Any, Dict, Tuple
 from kubernetes import client
 from kubernetes.client.exceptions import ApiException
 
-from .providers import _parse_cpu_quantity, _parse_memory_quantity
+from .metrics_providers import _parse_cpu_quantity, _parse_memory_quantity
 
 METRICS_GROUP = "metrics.k8s.io"
 METRICS_VERSION = "v1beta1"

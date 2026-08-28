@@ -72,7 +72,7 @@ python main.py serve --host 127.0.0.1 --port 8000
 ### 3. Test Tools
 ```bash
 # Test all MCP tools integration
-pytest test/test_tools.py
+pytest tests/test_tools.py
 ```
 
 ### 4. Example Prompts
@@ -302,7 +302,7 @@ DEFAULT_PROVIDER=gemini               # Use gemini for tool calling
 ```
 
 ## Project Layout
-```
+```text
 EdgePilot/
 ├── README.md
 ├── requirements.txt
@@ -310,6 +310,7 @@ EdgePilot/
 ├── core/                    # Shared logic
 │   ├── interface.py         # ask_question / schedule_operation helpers
 │   ├── settings.py          # Environment config + provider setup
+│   ├── stores.py            # JSON persistence logic
 │   └── semantic_cache.py    # Embedding-based LLM response cache
 ├── providers/               # LLM provider adapters
 │   ├── base.py              # BaseLLM protocol + ToolCall classes
@@ -319,7 +320,8 @@ EdgePilot/
 ├── tools/                   # System utilities exposed as tools
 │   ├── __init__.py          # Export metrics, scheduler, process helpers
 │   ├── metrics.py           # psutil + Prometheus-backed host reporting (TTL-cached)
-│   ├── providers.py         # Kubernetes + local metrics provider abstraction
+│   ├── metrics_providers.py # Kubernetes + local metrics provider abstraction
+│   ├── k8s_client.py        # Shared Kubernetes client configuration
 │   ├── scheduler.py         # Task registry + app launcher + shell/python runner
 │   └── end_task.py          # Process termination
 ├── MCP/                     # Model Context Protocol integration
@@ -332,10 +334,9 @@ EdgePilot/
 │   ├── styles.css           # Dark theme styling
 │   ├── main.js              # Electron main process
 │   └── package.json         # Node.js dependencies
-├── test/                    # Test suite
+├── tests/                   # Test suite
 │   ├── test_cli_api.py      # CLI + API endpoint tests
 │   ├── test_tools.py        # MCP tool smoke tests
-│   ├── test_providers.py    # Kubernetes provider tests
 │   └── test_optimization.py # TTL cache, async executor, semantic cache tests
 ├── env/.env                 # API keys and configuration
 ├── scripts/
@@ -362,7 +363,7 @@ EdgePilot/
 
 ## MCP (Model Context Protocol)
 
-EdgePilot includes full MCP integration with powerful tools using launcher.py for intelligent app launching:
+EdgePilot includes full MCP integration with powerful tools using scheduler.py for intelligent app launching:
 
 ### Available Tools
 
@@ -460,8 +461,8 @@ See `MCP/README.md` for the complete guide. It's a simple 5-step process:
 # Test all MCP tools integration
 python test_tools.py
 
-# Test launcher directly (launches notepad, chrome, minecraft)
-python tools/launcher.py
+# Test scheduler directly
+python tools/scheduler.py
 
 # Run modules directly
 python -c "from tools import gather_metrics; print(gather_metrics(top_n=5))"
@@ -475,9 +476,9 @@ python -c "from tools import list_apps; print(list_apps('game'))"
 3. Add environment variables for API keys/models
 4. For tool support, implement `enable_tools()` and parse `tool_calls` in responses
 
-## Key Features Powered by launcher.py
+## Key Features Powered by scheduler.py
 
-EdgePilot's application launching is powered by `launcher.py`, which provides:
+EdgePilot's application launching is powered by `scheduler.py`, which provides:
 
 1. **Windows Start Menu Search** - Searches .lnk shortcuts in user and system Start Menu locations
 2. **Microsoft Store Apps** - Discovers and launches UWP/Store apps via PowerShell
@@ -489,7 +490,7 @@ The LLM can use simple app names like "chrome", "minecraft", or "notepad" withou
 
 ## Kubernetes Capacity Evaluation
 
-EdgePilot can connect to a Kubernetes cluster and evaluate node-level capacity. The `tools/providers.py` module provides a `KubernetesMetricsProvider` that queries the K8s API for:
+EdgePilot can connect to a Kubernetes cluster and evaluate node-level capacity. The `tools/metrics_providers.py` module provides a `KubernetesMetricsProvider` that queries the K8s API for:
 
 - **Node headroom** — available CPU cores, free memory, and open pod slots per worker node
 - **Taints & tolerations** — checks whether a workload's tolerations match a node's scheduling constraints
@@ -527,4 +528,4 @@ EdgePilot includes several performance optimizations to minimize latency:
 ## Documentation
 - **`README.md`** (this file) - Quick start and overview
 - **`MCP/README.md`** - Complete MCP integration guide
-- **`tools/launcher.py`** - Application launcher implementation with detailed documentation
+- **`tools/scheduler.py`** - Application launcher implementation with detailed documentation

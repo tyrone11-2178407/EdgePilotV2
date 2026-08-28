@@ -1,0 +1,4 @@
+# Development dependencies (includes all runtime deps)
+-r base.txt
+pytest>=8.0
+pytest-cov>=5.0

@@ -2,28 +2,11 @@ import logging
 import time
 from typing import Dict, Any
 
-from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
+from .k8s_client import get_apps_v1 as _get_client, get_core_v1 as _get_core_client
+
 logger = logging.getLogger(__name__)
-
-def _get_client() -> client.AppsV1Api:
-    """Load the standard kubeconfig and return the AppsV1 API client."""
-    try:
-        config.load_kube_config()
-        return client.AppsV1Api()
-    except Exception as e:
-        logger.error(f"Failed to load kubeconfig: {e}")
-        raise RuntimeError(f"Could not load Kubernetes configuration: {e}")
-
-def _get_core_client() -> client.CoreV1Api:
-    """Load the standard kubeconfig and return the CoreV1 API client."""
-    try:
-        config.load_kube_config()
-        return client.CoreV1Api()
-    except Exception as e:
-        logger.error(f"Failed to load kubeconfig: {e}")
-        raise RuntimeError(f"Could not load Kubernetes configuration: {e}")
 
 def scale_workload(namespace: str, deployment_name: str, replicas: int) -> Dict[str, Any]:
     """Scales a deployment up or down."""
